@@ -10,7 +10,7 @@
             "request": "launch",
             "mode": "auto",
             "program": "cmd/mybittorrent/main.go",
-            "args": ["decode", "9:blueberry"]
+            "args": ["decode", "lli4eei5ee"]
         }
     ]
 }
