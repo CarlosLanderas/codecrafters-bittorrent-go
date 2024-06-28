@@ -154,6 +154,24 @@ func decodeDictionary(b string, st int) (d map[string]interface{}, i int, err er
 	return d, i, nil
 }
 
+func parseTorrent(torrent string) (string, error) {
+
+	data, _, err := decodeDictionary(torrent, 0)
+	if err != nil {
+		return "", err
+	}
+
+	tracker := data["announce"]
+
+	info, ok := data["info"].(map[string]interface{})
+
+	if !ok {
+		return "", fmt.Errorf("could not parse info section")
+	}
+
+	return fmt.Sprintf("Tracker URL: %s\nLength: %v", tracker, info["length"]), nil
+}
+
 func main() {
 
 	command := os.Args[1]
@@ -169,8 +187,27 @@ func main() {
 
 		jsonOutput, _ := json.Marshal(decoded)
 		fmt.Println(string(jsonOutput))
+
+	} else if command == "info" {
+		torrentFile := os.Args[2]
+		b, err := os.ReadFile(torrentFile)
+
+		if err != nil {
+			fmt.Println("File not found: ", torrentFile)
+			os.Exit(1)
+		}
+
+		info, err := parseTorrent(string(b))
+
+		if err != nil {
+			fmt.Println("Error parsing torrent: ", err.Error())
+		}
+
+		fmt.Println(info)
+
 	} else {
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
 	}
+
 }
