@@ -10,7 +10,7 @@
             "request": "launch",
             "mode": "auto",
             "program": "cmd/mybittorrent/main.go",
-            "args": ["decode", "lli4eei5ee"]
+            "args": ["decode", "d3:foo3:bar5:helloi52ee"]
         }
     ]
 }

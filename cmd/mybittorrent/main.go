@@ -16,6 +16,8 @@ func decode(b string, st int) (x interface{}, i int, e error) {
 		return decodeInt(b, st)
 	case b[st] == 'l':
 		return decodeList(b, st)
+	case b[st] == 'd':
+		return decodeDictionary(b, st)
 
 	default:
 		return nil, st, fmt.Errorf("unexpected value: %q", b[i])
@@ -111,6 +113,45 @@ func decodeList(b string, st int) (l []interface{}, i int, err error) {
 	}
 
 	return l, i + 1, nil
+}
+
+func decodeDictionary(b string, st int) (d map[string]interface{}, i int, err error) {
+	i = st
+	i++ // move dict
+
+	d = make(map[string]interface{})
+
+	for {
+
+		if b[i] == 'e' {
+			break
+		}
+
+		var key, val interface{}
+
+		key, i, err = decode(b, i)
+
+		if err != nil {
+			return nil, i, err
+		}
+
+		k, ok := key.(string)
+
+		if !ok {
+			return nil, i, fmt.Errorf("dict key is not a string: %q", key)
+		}
+
+		val, i, err = decode(b, i)
+
+		if err != nil {
+			return nil, i, err
+		}
+
+		d[k] = val
+
+	}
+
+	return d, i, nil
 }
 
 func main() {
