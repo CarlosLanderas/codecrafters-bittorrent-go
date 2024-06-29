@@ -11,8 +11,8 @@
             "mode": "auto",
             "program": "cmd/mybittorrent/main.go",
             "args": [
-                "info",
-                "sample.torrent"
+                "decode",
+                "d3:foo3:bar5:helloi52ee"
             ],
             "cwd": "${workspaceFolder}",
         }
