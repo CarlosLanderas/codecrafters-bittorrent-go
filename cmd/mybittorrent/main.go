@@ -88,6 +88,12 @@ func parseTorrent(content string) error {
 	fmt.Println("Tracker URL:", tracker)
 	fmt.Println("Length:", torrent.Info.Length)
 	fmt.Println("Info Hash:", hash)
+	fmt.Println("Piece Length:", torrent.Info.PieceLength)
+	fmt.Println("Piece Hashes:")
+
+	for i := 0; i < len(torrent.Info.Pieces); i += 20 {
+		fmt.Printf("%x\n", torrent.Info.Pieces[i:i+20])
+	}
 
 	return nil
 }
