@@ -11,7 +11,7 @@
             "mode": "auto",
             "program": "cmd/mybittorrent/main.go",
             "args": [
-                "info",
+                "peers",
                 "sample.torrent"
             ],
             "cwd": "${workspaceFolder}",
