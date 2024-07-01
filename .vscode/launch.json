@@ -11,9 +11,11 @@
             "mode": "auto",
             "program": "cmd/mybittorrent/main.go",
             "args": [
-                "handshake",
+                "download_piece",
+                "-o",
+                "/tmp/test-piece-0",
                 "sample.torrent",
-                "165.232.33.77:51467"
+                "0"
             ],
             "cwd": "${workspaceFolder}",
         }
