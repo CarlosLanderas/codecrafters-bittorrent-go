@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -47,7 +48,18 @@ func main() {
 	} else if command == "info" {
 		info(os.Args[2])
 	} else if command == "peers" {
-		peers(os.Args[2])
+		torrent, err := readTorrent(os.Args[2])
+		if err != nil {
+			log.Fatalf("could not read file: %v", err)
+		}
+		peers(torrent)
+	} else if command == "handshake" {
+		torrent, err := readTorrent(os.Args[2])
+		if err != nil {
+			log.Fatalf("could not read file: %v", err)
+		}
+
+		handshake(torrent, os.Args[3])
 	} else {
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
@@ -77,6 +89,43 @@ func info(torrentPath string) {
 		fmt.Printf("error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func handshake(torrent *TorrentFile, address string) {
+
+	conn, err := net.Dial("tcp", address)
+
+	if err != nil {
+		log.Fatalf("could not connect remote address: %q", address)
+	}
+
+	defer conn.Close()
+
+	infoHash := torrentInfoHash(torrent.Info)
+
+	protoLen := byte(19)
+	protoStr := []byte("BitTorrent protocol")
+	reserved := make([]byte, 8)
+
+	handshake := append([]byte{protoLen}, protoStr...)
+	handshake = append(handshake, reserved...)
+	handshake = append(handshake, infoHash[:]...)
+	handshake = append(handshake, []byte{0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9}...)
+
+	_, err = conn.Write(handshake)
+
+	if err != nil {
+		log.Fatalf("error writing handshake: %v", err)
+	}
+
+	buf := make([]byte, 68)
+	_, err = conn.Read(buf)
+
+	if err != nil {
+		log.Fatalf("error receiving response: %v", err)
+	}
+
+	fmt.Printf("Peer ID: %s\n", hex.EncodeToString(buf[48:]))
 }
 
 func readTorrent(torrentPath string) (*TorrentFile, error) {
@@ -127,12 +176,7 @@ func parseTorrent(torrent *TorrentFile) error {
 	return nil
 }
 
-func peers(torrentPath string) {
-	torrent, err := readTorrent(torrentPath)
-
-	if err != nil {
-		log.Fatalf("error reading torrent: %v", torrentPath)
-	}
+func peers(torrent *TorrentFile) {
 
 	tracker, err := getTrackerResponse(torrent.Announce, torrent.Info)
 
@@ -152,14 +196,16 @@ func peers(torrentPath string) {
 }
 
 func getTrackerResponse(announceUrl string, info MetaInfo) (*TrackerResponse, error) {
-	var buff bytes.Buffer
+	infoHash := torrentInfoHash(info)
 
-	err := bencode.Marshal(&buff, info)
+	// var buff bytes.Buffer
 
-	if err != nil {
-		log.Fatalf("error marshalling: %v", err)
-	}
-	infoHash := sha1.Sum(buff.Bytes())
+	// err := bencode.Marshal(&buff, info)
+
+	// if err != nil {
+	// 	log.Fatalf("error marshalling: %v", err)
+	// }
+	// infoHash := sha1.Sum(buff.Bytes())
 
 	length := strconv.Itoa(int(info.Length))
 
@@ -187,4 +233,16 @@ func getTrackerResponse(announceUrl string, info MetaInfo) (*TrackerResponse, er
 	bencode.Unmarshal(resp.Body, &tracker)
 
 	return tracker, nil
+}
+
+func torrentInfoHash(info MetaInfo) [20]byte {
+	var buff bytes.Buffer
+
+	err := bencode.Marshal(&buff, info)
+
+	if err != nil {
+		log.Fatalf("error marshalling: %v", err)
+	}
+
+	return sha1.Sum(buff.Bytes())
 }
