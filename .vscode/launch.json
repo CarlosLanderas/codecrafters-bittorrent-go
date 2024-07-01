@@ -9,13 +9,12 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "cmd/mybittorrent/main.go",
+            "program": "${workspaceRoot}/cmd/mybittorrent",
             "args": [
-                "download_piece",
+                "download",
                 "-o",
-                "/tmp/test-piece-0",
-                "sample.torrent",
-                "0"
+                "/tmp/test.txt",
+                "sample.torrent"
             ],
             "cwd": "${workspaceFolder}",
         }
