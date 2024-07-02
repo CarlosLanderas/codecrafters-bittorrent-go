@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/sha1"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -11,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 
 	"github.com/jackpal/bencode-go"
@@ -25,11 +23,6 @@ type TorrentClient struct {
 type TrackerResponse struct {
 	Interval int    `bencode:"interval"`
 	Peers    string `bencode:"peers"`
-}
-
-type Peer struct {
-	Ip   net.IP
-	Port uint16
 }
 
 type RequestPayload struct {
@@ -61,12 +54,53 @@ func (tc *TorrentClient) InitTransfer(peer string) {
 	unchoke(conn)
 }
 
-func (tc *TorrentClient) PeerConn(address string) *net.Conn {
-	return tc.peers[address]
+func (tc *TorrentClient) Handshake(torrent *TorrentFile, address string) error {
+
+	var err error
+
+	conn, err := net.Dial("tcp", address)
+
+	if err != nil {
+		return err
+	}
+
+	tc.peers[address] = &conn
+
+	infoHash, err := torrent.InfoHash()
+
+	if err != nil {
+		return err
+	}
+
+	protoLen := byte(19)
+	protoStr := []byte("BitTorrent protocol")
+	reserved := make([]byte, 8)
+
+	handshake := append([]byte{protoLen}, protoStr...)
+	handshake = append(handshake, reserved...)
+	handshake = append(handshake, infoHash[:]...)
+	handshake = append(handshake, []byte{0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9}...)
+
+	_, err = conn.Write(handshake)
+
+	if err != nil {
+		log.Fatalf("error writing handshake: %v", err)
+	}
+
+	buf := make([]byte, 68)
+	_, err = conn.Read(buf)
+
+	if err != nil {
+		log.Fatalf("error receiving response: %v", err)
+	}
+
+	fmt.Printf("Peer ID: %s\n", hex.EncodeToString(buf[48:]))
+
+	return nil
 }
 
 func (tc *TorrentClient) Peers() ([]string, error) {
-	tracker, err := getTrackerResponse(tc.torrent.Announce, tc.torrent.Info)
+	tracker, err := getTrackerResponse(tc.torrent)
 
 	if err != nil {
 		return nil, err
@@ -89,7 +123,7 @@ func (tc *TorrentClient) Peers() ([]string, error) {
 
 func (tc *TorrentClient) Download(peer, filePath string) (io.Reader, error) {
 	var fileBuf bytes.Buffer
-	for i, _ := range getPieces(&tc.torrent.Info) {
+	for i := range getPieces(&tc.torrent.Info) {
 
 		data, err := tc.DownloadPiece(peer, i, filePath)
 
@@ -110,7 +144,7 @@ func (tc *TorrentClient) DownloadPiece(peer string, pieceId int, filePath string
 
 	pieceHash := getPieces(&tc.torrent.Info)[pieceId]
 
-	fmt.Printf("PieceHash for id: %d --> %x\n", pieceId, pieceHash)
+	fmt.Println("downloading", hex.EncodeToString([]byte(pieceHash)))
 
 	count := 0
 
@@ -121,11 +155,10 @@ func (tc *TorrentClient) DownloadPiece(peer string, pieceId int, filePath string
 
 	for i := 0; i < int(fullBlocks); i++ {
 
-		payload := RequestPayload{
-			Index: uint32(pieceId),
-			Begin: uint32(byteOffset),
-			Block: uint32(BLOCK_SIZE),
-		}
+		payload := requestPayload(
+			uint32(pieceId),
+			uint32(byteOffset),
+			uint32(BLOCK_SIZE))
 
 		var buf bytes.Buffer
 		binary.Write(&buf, binary.BigEndian, payload)
@@ -142,11 +175,10 @@ func (tc *TorrentClient) DownloadPiece(peer string, pieceId int, filePath string
 
 	if lastBlockLength > 0 {
 
-		payload := RequestPayload{
-			Index: uint32(pieceId),
-			Begin: uint32(byteOffset),
-			Block: uint32(lastBlockLength),
-		}
+		payload := requestPayload(
+			uint32(pieceId),
+			uint32(byteOffset),
+			uint32(lastBlockLength))
 
 		var buf bytes.Buffer
 
@@ -181,19 +213,12 @@ func (tc *TorrentClient) DownloadPiece(peer string, pieceId int, filePath string
 	return buffer.Bytes(), nil
 }
 
-func (tc *TorrentClient) SaveToDisk(buffer io.Reader, filePath, identifier string) {
-	buf, err := io.ReadAll(buffer)
-
-	if err != nil {
-		log.Fatalf("error reading file buffer: %v", err)
+func requestPayload(index, begin, block uint32) RequestPayload {
+	return RequestPayload{
+		Index: index,
+		Begin: begin,
+		Block: block,
 	}
-	err = os.WriteFile(filePath, buf, os.ModePerm)
-
-	if err != nil {
-		log.Fatalf("error writing file: %v", err)
-	}
-
-	fmt.Printf("Piece %s downloaded to %s", identifier, filePath)
 }
 
 func getPieces(info *MetaInfo) []string {
@@ -217,10 +242,14 @@ func createPeerMessage(messageId uint8, payload []byte) []byte {
 	return messageData
 }
 
-func getTrackerResponse(announceUrl string, info MetaInfo) (*TrackerResponse, error) {
-	infoHash := torrentInfoHash(info)
+func getTrackerResponse(torrent *TorrentFile) (*TrackerResponse, error) {
+	infoHash, err := torrent.InfoHash()
 
-	length := strconv.Itoa(int(info.Length))
+	if err != nil {
+		return nil, err
+	}
+
+	length := strconv.Itoa(int(torrent.Info.Length))
 
 	values := url.Values{}
 	values.Add("info_hash", string(infoHash[:]))
@@ -231,7 +260,7 @@ func getTrackerResponse(announceUrl string, info MetaInfo) (*TrackerResponse, er
 	values.Add("left", length)
 	values.Add("compact", "1")
 
-	reqUrl := fmt.Sprintf("%s?%s", announceUrl, values.Encode())
+	reqUrl := fmt.Sprintf("%s?%s", torrent.Announce, values.Encode())
 
 	resp, err := http.Get(reqUrl)
 
@@ -246,18 +275,6 @@ func getTrackerResponse(announceUrl string, info MetaInfo) (*TrackerResponse, er
 	bencode.Unmarshal(resp.Body, &tracker)
 
 	return tracker, nil
-}
-
-func torrentInfoHash(info MetaInfo) [20]byte {
-	var buff bytes.Buffer
-
-	err := bencode.Marshal(&buff, info)
-
-	if err != nil {
-		log.Fatalf("error marshalling: %v", err)
-	}
-
-	return sha1.Sum(buff.Bytes())
 }
 
 func bitField(cnn *net.Conn) {
@@ -285,7 +302,6 @@ func waitForMessage(conn net.Conn, message uint8) []byte {
 	}
 
 	messageLength := binary.BigEndian.Uint32(prefix)
-	fmt.Printf("messageLength %v\n", messageLength)
 
 	receivedMsgId := make([]byte, 1)
 
@@ -312,47 +328,6 @@ func waitForMessage(conn net.Conn, message uint8) []byte {
 		fmt.Printf("Return for MessageId: %d\n", messageId)
 		return payload
 	}
-
-	return nil
-}
-
-func (tc *TorrentClient) Handshake(address string) error {
-
-	var err error
-
-	conn, err := net.Dial("tcp", address)
-
-	if err != nil {
-		return err
-	}
-
-	tc.peers[address] = &conn
-
-	infoHash := torrentInfoHash(tc.torrent.Info)
-
-	protoLen := byte(19)
-	protoStr := []byte("BitTorrent protocol")
-	reserved := make([]byte, 8)
-
-	handshake := append([]byte{protoLen}, protoStr...)
-	handshake = append(handshake, reserved...)
-	handshake = append(handshake, infoHash[:]...)
-	handshake = append(handshake, []byte{0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9}...)
-
-	_, err = conn.Write(handshake)
-
-	if err != nil {
-		log.Fatalf("error writing handshake: %v", err)
-	}
-
-	buf := make([]byte, 68)
-	_, err = conn.Read(buf)
-
-	if err != nil {
-		log.Fatalf("error receiving response: %v", err)
-	}
-
-	fmt.Printf("Peer ID: %s\n", hex.EncodeToString(buf[48:]))
 
 	return nil
 }

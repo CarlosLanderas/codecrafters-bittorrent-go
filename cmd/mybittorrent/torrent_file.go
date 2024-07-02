@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"fmt"
 	"os"
 
@@ -39,6 +40,19 @@ func (tf *TorrentFile) PieceLength(pieceId int) int64 {
 	}
 
 	return rest
+}
+
+func (tf *TorrentFile) InfoHash() ([20]byte, error) {
+
+	var buff bytes.Buffer
+
+	err := bencode.Marshal(&buff, tf.Info)
+
+	if err != nil {
+		return [20]byte{}, err
+	}
+
+	return sha1.Sum(buff.Bytes()), nil
 }
 
 func readTorrent(torrentPath string) (*TorrentFile, error) {

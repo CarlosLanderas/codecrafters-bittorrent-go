@@ -36,21 +36,22 @@ func main() {
 		}
 
 		client := NewTorrentClient(torrent)
-		client.Handshake(os.Args[3])
+		client.Handshake(torrent, os.Args[3])
 
 	} else if command == "download_piece" {
 
 		filePath := os.Args[3]
+		torrentFile := os.Args[4]
 		pieceId, err := strconv.Atoi(os.Args[5])
 
 		if err != nil {
 			log.Fatalf("invalid piece id: %v", err)
 		}
 
-		client, peers, err := createClient(filePath)
+		client, peers, err := createClient(torrentFile)
 
 		if err != nil {
-			log.Fatal("error creating client: %v", err)
+			log.Fatalf("error creating client: %v", err)
 		}
 
 		pieceData, err := client.DownloadPiece(peers[0], pieceId, filePath)
@@ -59,25 +60,25 @@ func main() {
 			log.Fatalf("Error downloading piece %d : %v", pieceId, err)
 		}
 
-		client.SaveToDisk(bytes.NewReader(pieceData), filePath, string(pieceId))
+		SaveToDisk(bytes.NewReader(pieceData), filePath, string(pieceId))
 
 	} else if command == "download" {
 		filePath := os.Args[3]
 		torrentFile := os.Args[4]
 
-		client, peers, err := createClient(filePath)
+		client, peers, err := createClient(torrentFile)
 
 		if err != nil {
 			log.Fatalf("handshake error: %v", err)
 		}
 
-		fileBuf, err := client.Download(peers[0], filePath)
+		fileReader, err := client.Download(peers[0], filePath)
 
 		if err != nil {
 			log.Fatalf("error downloading file: %v", err)
 		}
 
-		client.SaveToDisk(fileBuf, filePath, torrentFile)
+		SaveToDisk(fileReader, filePath, torrentFile)
 
 	} else {
 		fmt.Println("Unknown command: " + command)
@@ -141,7 +142,7 @@ func parseTorrent(torrent *TorrentFile) error {
 
 func createClient(torrentPath string) (client *TorrentClient, peers []string, err error) {
 
-	torrent, err := NewTorrent(os.Args[4])
+	torrent, err := NewTorrent(torrentPath)
 
 	if err != nil {
 		log.Fatalf("could not read file: %v", err)
@@ -155,7 +156,7 @@ func createClient(torrentPath string) (client *TorrentClient, peers []string, er
 		return nil, nil, err
 	}
 
-	err = client.Handshake(peers[0])
+	err = client.Handshake(torrent, peers[0])
 
 	if err != nil {
 		return nil, nil, err
